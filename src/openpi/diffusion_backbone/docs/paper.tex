@@ -23,8 +23,8 @@
 \newcommand{\todo}[1]{\textcolor{todocol}{\textbf{[TODO: #1]}}}
 \newcommand{\tbd}{\textcolor{todocol}{TBD}}
 
-\title{Diffusion-Trained Multimodal Backbones for Action-Token
-Representations in Flow-Matching Vision-Language-Action Policies}
+\title{Diffusion-Trained Backbones for Flow-Matching\\
+Vision-Language-Action Policies}
 \author{\IEEEauthorblockN{Ryan Rahman}
 \IEEEauthorblockA{University of Waterloo}
 \thanks{Working preprint; updated as experiments complete.}}
@@ -81,8 +81,8 @@ The question has been hard to ask cleanly for two reasons. First, until recently
 there was no diffusion-pretrained language model at the scale of the autoregressive
 backbones used in VLAs; discrete-diffusion LMs such as Dream-7B
 \cite{dream}, initialized from Qwen2.5-7B \cite{qwen25}, now provide an
-architecturally identical counterpart that differs \emph{only} in pretraining
-objective. Second, the inference-time attention mask is easy to confuse with the
+architecturally identical counterpart whose defining difference is a
+discrete-diffusion pretraining objective. Second, the inference-time attention mask is easy to confuse with the
 pretraining prior: we note that the $\pi_{0.5}$ backbone is in fact a prefix-LM
 whose action block is already attended bidirectionally, so the causal-vs-bidirectional
 distinction at inference is not the variable of interest --- the pretraining prior
@@ -105,8 +105,9 @@ Our contributions are: (i) a scale/architecture-matched isolation of the
 diffusion pretraining prior for VLA backbones; (ii) a precise characterization of
 the \(\pi_{0.5}\) backbone as a prefix-LM (bidirectional action block), separating
 attention-mask topology from the pretraining prior; (iii) representation-level
-probing of action-token hidden states; (iv) a controlled LIBERO evaluation
-directly comparable to published diffusion-VLA results.
+probing of action-token hidden states; and (iv) a controlled LIBERO evaluation
+with rollout-level statistics (Wilson intervals, two-proportion tests) and an
+explicit account of the study's confounds and single-seed scope.
 
 \section{Related Work}
 
@@ -130,8 +131,9 @@ language models --- Dream-7B \cite{dream}, and encoder-decoder diffusion LMs suc
 as DiffusionGemma \cite{diffusiongemma_docs} --- and multimodal diffusion models
 like LaViDa \cite{lavida} establish that denoising-pretrained backbones exist at
 VLM scale. Crucially, Dream is initialized from an autoregressive model
-(Qwen2.5-7B), giving us a matched pair whose only systematic difference is the
-pretraining objective.
+(Qwen2.5-7B), giving us a matched pair whose principal difference is the
+pretraining objective (with the corpus/compute caveat we bound in
+\S\ref{sec:limits}).
 
 \paragraph{Unified-backbone diffusion VLAs (closest work).} A recent line folds
 action decoding \emph{into} a diffusion backbone --- Dream-VLA \cite{dreamvla},
@@ -173,7 +175,7 @@ changes from Gemma to Qwen2.5/Dream (different depth, heads, RoPE, biases). We
 therefore use a \emph{standalone} flow expert --- a small DiT-style transformer
 over the action tokens, flow-time injected via adaLN-Zero conditioning --- that
 reads $H_{\text{action}}$ and is decoupled from the backbone's attention. It is
-shared \emph{identically} across variants A$'$/B/C/D; the only variant-specific
+shared \emph{identically} across variants A$'$/C/D; the only variant-specific
 parameter is a linear input adapter mapping the backbone width to the common
 expert width ($\sim$2--4M of $\sim$117M parameters), so the C$-$D contrast
 remains clean. Model A (stock $\pi_{0.5}$, fused expert) is retained as a
@@ -236,8 +238,15 @@ rollouts/suite) and a two-proportion test on the $C-D$ contrast, with LIBERO-Lon
 as the primary discriminator, plus representation probes (\S\ref{sec:probing}). A
 and A$'$ are averaged over 3 seeds; C and D are single-seed ($n{=}1$) --- the
 identifying $C-D$ contrast is evaluated on the matched seed, with additional seeds
-for error bars left to
-future work.
+for error bars left to future work.
+
+\paragraph{Reproducibility.} The implementation extends OpenPI \cite{openpi}
+(Apache-2.0); the backbones (Dream-7B, Qwen2.5-7B) and the LIBERO benchmark are
+publicly available, and no private data is used. The standalone flow expert,
+per-variant training configs (LoRA rank 64, batch 32, 30k steps, LR $5\times
+10^{-5}$, $k{=}1$), and the probing pipeline are implemented as an
+\texttt{openpi.diffusion\_backbone} package; code and configurations will be
+released.
 
 \section{Results}
 
@@ -318,88 +327,31 @@ The rollout comparison (\S\ref{sec:main}) tells us \emph{whether} the diffusion
 prior helps end-to-end; probing asks \emph{why}, by measuring how much
 action-relevant information is already linearly decodable from the backbone's
 action-token hidden states before the flow expert acts. Because C and D share
-architecture, width, vision, LoRA recipe, and expert---differing only in
-pretraining objective---a probing gap between them is attributable to the
-diffusion prior, and mirrors the $C-D$ contrast at the representation level.
+architecture, width ($3584$), vision, LoRA recipe, and expert, and differ chiefly
+in pretraining (\S\ref{sec:limits}), a probe gap between them at matched capacity
+is attributable to the pretraining prior and mirrors the $C-D$ contrast at the
+representation level.
 
-\paragraph{Feature extraction.}
-For each model we run a single forward pass over a held-out set of LIBERO
-observations and read the last-layer backbone hidden states at the action-token
-positions, $h \in \mathbb{R}^{H\times d}$ ($H{=}32$ action steps, $d{=}3584$ for
-Qwen/Dream, $2048$ for Gemma). The backbone is \emph{frozen}: no gradients flow
-into it, and the flow expert is not involved. To get a fixed-length feature we
-report both mean-pooling over the $H$ action tokens and the per-token features
-(probing each step $t$ independently), so decodability can be traced along the
-chunk. Features are extracted at flow time $\tau{=}1$ (pure-noise action input),
-so the probe sees only what the \emph{conditioning} carries, not a partially
-denoised action; for the diffusion backbone we use the $k{=}1$ single-pass read
-(\S\ref{sec:kread}) to match D exactly.
+\paragraph{Protocol.} For each trained backbone we run a single frozen forward
+pass ($k{=}1$, matching D) over 4000 LIBERO observations at flow time $\tau{=}1$
+(pure-noise action input, so the features reflect only the conditioning), and read
+the last-layer hidden states at the $H{=}10$ action-token positions, mean-pooled
+to a $3584$-d feature. C and D are extracted in the same dataset order, so they are
+probed on \emph{identical} frames (the pipeline asserts this); because both
+backbones are $3584$-d, one probe architecture is capacity-matched across them with
+no dimensionality confound. We fit a linear probe (ridge for regression, logistic
+for classification) --- our headline linear-decodability measure --- and a small
+2-layer MLP as a nonlinear ceiling, each over 5 train/test splits.
 
-\paragraph{Probe targets.} We decode a battery of action-relevant quantities of
-increasing abstraction, each with its own natural metric:
-\begin{itemize}
-  \item \textbf{Next action / chunk} (regression, $R^2$): the ground-truth
-        end-effector delta at step $t$, and the full 32-step chunk. Direct test
-        of how much of the control signal is linear in the features.
-  \item \textbf{Gripper state} (binary, accuracy/AUC): open vs.\ closed, and the
-        \emph{transition} step (the contact/grasp event), which is where
-        long-horizon tasks fail.
-  \item \textbf{Subtask phase} (multi-class, accuracy): the current phase within
-        a multi-stage task (reach / grasp / transport / place), the abstraction
-        most relevant to the Long suite where $C-D$ is hypothesized to be largest.
-  \item \textbf{Target-object pose} (regression, $R^2$): position of the task's
-        target object, testing spatial grounding of the visual conditioning.
-  \item \textbf{Chunk success} (binary, AUC): whether the executed chunk advances
-        the task, giving a representation-level analogue of rollout success.
-\end{itemize}
-
-\paragraph{Probe model and protocol.} To measure \emph{linear} decodability we
-use a linear (ridge / logistic) probe; we additionally report a small 2-layer MLP
-probe as a nonlinear ceiling. Probes are \textbf{capacity-matched} across
-backbones (identical probe architecture and hyperparameters; the only input
-difference is $d$, and we control for it by also reporting probes on a
-PCA-reduced common dimensionality). We fit on a train split and report on a held-out
-test split, with 5 seeds for the probe fit (backbone frozen) to get error bars on
-the probe metrics themselves. Chance and a shuffled-label baseline are reported
-per target.
-
-\paragraph{Two settings.}
-\begin{enumerate}
-  \item \textbf{Trained checkpoints (primary).} Probe the LoRA-adapted C and D
-        backbones---the exact weights that produced the rollouts in
-        \S\ref{sec:main}. This ties the probe gap to the success gap on the same
-        models. This is the reported comparison.
-  \item \textbf{Stock backbones (isolation).} Probe the off-the-shelf Gemma,
-        Qwen2.5-7B, and Dream-7B backbones with \emph{no} VLA fine-tuning
-        (vision features held fixed across the three). This needs no policy
-        checkpoint---including no A$'$ checkpoint---and isolates the pretraining
-        prior in its purest form: three pretraining objectives, everything else
-        held constant. A diffusion advantage that is already present here is
-        evidence the prior, not the fine-tuning, drives it.
-\end{enumerate}
-
-\paragraph{Reading the result.} The key comparison is probe metric on C vs.\ D
-per target. Three outcomes and their reading: (i) \emph{C probes higher and rolls
-out higher} --- the diffusion prior yields more decodable action representations,
-and that translates to control (the clean positive result); (ii) \emph{C probes
-higher but does not roll out higher} --- a probe-win/rollout-win
-\textbf{dissociation}, meaning the information is present but the fixed expert
-cannot exploit it (implicating the decoupled-expert design, cf.\ $A'\!-\!A$);
-(iii) \emph{no probe gap} --- the objectives produce equivalent action-token
-representations at this scale. We expect the effect, if present, to be largest on
-the phase and gripper-transition targets, matching the Long-suite regime.
-\paragraph{Implementation.} The pipeline is
-\texttt{scripts/extract\_probe\_features.py} (dumps the frozen $\tau{=}1$
-action-token features from a trained C/D checkpoint, mean-pooled and first-token,
-alongside labels) and \texttt{openpi.diffusion\_backbone.probing} (fits the
-capacity-matched linear + MLP probes over 5 splits and emits the C-vs-D table).
-C and D are extracted in the same dataset order so they are probed on identical
-frames; the probe step asserts this alignment. The first implemented target set is
-the one derivable directly from the dataset --- immediate action and full action
-chunk (real 7-DoF, $R^2$), proprioceptive state ($R^2$), and gripper command
-(median-split, accuracy/AUROC). The more abstract targets (subtask phase,
-target-object pose, chunk success) require simulator-state annotation and are
-deferred to a labeling pass.
+\paragraph{Targets.} We decode the action-relevant quantities available directly
+from the dataset: the immediate action and the full action chunk (real 7-DoF,
+$R^2$), the proprioceptive state ($R^2$), and the gripper command (median-split,
+accuracy/AUROC). More abstract targets --- subtask phase and target-object pose,
+which would better probe the long-horizon regime --- require simulator-state
+annotation and are left to future work, as is an isolation probe of the
+off-the-shelf backbones before fine-tuning. The pipeline is
+\texttt{scripts/extract\_probe\_features.py} and
+\texttt{openpi.diffusion\_backbone.probing}.
 
 \begin{table}[t]
 \centering
