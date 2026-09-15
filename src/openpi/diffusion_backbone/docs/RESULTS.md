@@ -206,3 +206,31 @@ NOT converge (max-iter, variance like 0.271±0.271) — inconclusive, omitted.
 Interpretation: advantage acts via higher-level/temporal structure or closed-loop
 robustness, not linear decodability of immediate control. Rules out the simplest
 mechanistic explanation.
+
+---
+
+## Stage 4 — Statistical treatment (no retraining) — Wilson CIs + significance
+
+Added rollout-level statistics to the C−D contrast using the existing 500
+rollouts/suite (no new training). 95% Wilson score intervals + pooled
+two-proportion z-test:
+
+| Suite | C (95% Wilson) | D (95% Wilson) | C−D | p | verdict |
+|-------|--:|--:|--:|--:|--|
+| Spatial | 93.0 [90.4, 94.9] | 94.2 [91.8, 95.9] | −1.2 | 0.44 | ns (CIs overlap) |
+| Object  | 93.2 [90.6, 95.1] | 82.0 [78.4, 85.1] | +11.2 | 7.7e-08 | *** disjoint |
+| Goal    | 73.2 [69.2, 76.9] | 71.4 [67.3, 75.2] | +1.8 | 0.52 | ns (CIs overlap) |
+| Long    | 69.4 [65.2, 73.3] | 57.4 [53.0, 61.7] | +12.0 | 8.2e-05 | *** disjoint |
+
+**Sharper (honest) claim:** diffusion prior gives a statistically significant
+rollout-level gain on Object (+11.2) and Long (+12.0) — the suites where AR is
+weak — and a tie on Spatial/Goal. This is ROLLOUT precision (measurement over 500
+trials for these two trained models), NOT training-seed variance, which n=1 leaves
+unmeasured. Stated as such in paper (abstract, Sec main table + caption, Limitations).
+
+Paper cleaned for workshop submission (single-seed, sim-only, honest): abstract +
+main-comparison paragraph rewritten around significance; Wilson CIs in setup;
+Limitations subsection added (seed variance w/ A′ Long sd≈4.3; objective-vs-corpus
+confound bounded; attention-topology-already-matched noted; sim-only scope). Model B
+row removed from tables (future work only). No \todo/\tbd left. NOTE: machine for C/D
+lost — seeds 1/2 would require full retrain (Dream/Qwen 7B, ~1.7 days/run on 2×A100).

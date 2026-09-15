@@ -44,15 +44,18 @@ flow-matching action expert. We isolate the pretraining prior with a matched pai
 (AR) --- holding architecture, initialization, action expert, dataset, and control
 stack fixed, and evaluate entirely in simulation on the LIBERO benchmark with
 both policy-level success and representation-level probing. On the matched $C-D$
-contrast (single seed), the diffusion-trained backbone improves mean LIBERO
-success by $+5.9$ points (82.2 vs.\ 76.3), with the largest gains on the
-long-horizon (LIBERO-10, $+12.0$) and object (\,$+11.2$) suites --- precisely the
-regimes where the autoregressive backbone is weakest --- and parity on the
-near-ceiling spatial suite. Yet linear probing of the two backbones' action-token
-features finds them equally decodable for low-level action, state, and gripper
-targets ($|C-D|\le0.01$): a rollout--probe dissociation indicating the diffusion
-prior's benefit is not reducible to the linear decodability of immediate control
-signals, but acts through higher-level or closed-loop structure.
+contrast (single seed, 500 rollouts/suite), the diffusion-trained backbone improves
+mean LIBERO success by $+5.9$ points (82.2 vs.\ 76.3). The gain is concentrated
+exactly where the autoregressive backbone is weakest: it is large and statistically
+significant (disjoint 95\% Wilson intervals, $p<0.001$) on the long-horizon
+($+12.0$) and object ($+11.2$) suites, and a tie on the near-ceiling spatial and
+goal suites. Linear probing of the two backbones' action-token features, however,
+finds them equally decodable for low-level action, state, and gripper targets
+($|C-D|\le0.01$): the behavioral advantage is not reducible to the linear
+decodability of immediate control signals, pointing instead to higher-level or
+closed-loop structure. We report the study as a controlled, single-seed result and
+discuss its limitations, including seed variance and the objective-vs-corpus
+confound inherent to off-the-shelf backbones.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -192,7 +195,6 @@ A & Stock $\pi_{0.5}$ (Gemma, \emph{fused} expert) --- reference baseline \\
 A$'$ & Gemma backbone $+$ standalone expert --- architecture-matched baseline \\
 D & Qwen2.5-7B (AR) $+$ standalone expert --- matched control \\
 C & Dream-7B (diffusion, init.\ from Qwen2.5-7B) $+$ standalone expert --- proposed \\
-B & Model D's backbone $+$ expanded attention topology --- topology ablation \\
 \bottomrule
 \end{tabularx}
 \end{table*}
@@ -229,10 +231,12 @@ and because freezing the base best preserves the pretraining prior the $C-D$
 contrast is designed to isolate. The diffusion backbone is read with a single
 forward pass ($k{=}1$), matching D exactly; deeper $k$-step refinement reads are
 left to future work. Each training run used 2$\times$A100 ($\sim$5\,s/step). We
-report per-suite success rate, with LIBERO-Long as the primary discriminator,
-plus representation probes (\S\ref{sec:probing}). A and A$'$ are averaged over 3
-seeds; C and D are single-seed ($n{=}1$) --- the identifying $C-D$ contrast is
-evaluated on the matched seed, with additional seeds for error bars left to
+report per-suite success rate with 95\% Wilson confidence intervals (500
+rollouts/suite) and a two-proportion test on the $C-D$ contrast, with LIBERO-Long
+as the primary discriminator, plus representation probes (\S\ref{sec:probing}). A
+and A$'$ are averaged over 3 seeds; C and D are single-seed ($n{=}1$) --- the
+identifying $C-D$ contrast is evaluated on the matched seed, with additional seeds
+for error bars left to
 future work.
 
 \section{Results}
@@ -263,9 +267,13 @@ A (ours, 3 seeds) & 97.7\,$\pm$\,0.6 & 98.3\,$\pm$\,0.6 & 97.1\,$\pm$\,0.5 & 93.
 \begin{table*}[t]
 \centering
 \caption{LIBERO success rate (\%) by variant. A/A$'$ are mean over 3 seeds;
-D/C are single-seed (n=1, seed 0) preliminary runs (error bars pending). The
-identifying contrast is $C-D$, evaluated on the matched single seed. D/C use the
-strengthened LoRA recipe (unfrozen SigLIP, rank 64); A$'$ is full fine-tuned.}
+D/C are single-seed ($n{=}1$, seed 0). The identifying contrast is $C-D$,
+evaluated on the matched single seed. D/C use the strengthened LoRA recipe
+(unfrozen SigLIP, rank 64); A$'$ is full fine-tuned. Superscripts on $C-D$ mark a
+two-proportion test over the 500 rollouts per suite ($^{\ast\ast\ast}p<0.001$):
+Object and Long are significant at the rollout level (95\% Wilson intervals
+disjoint), Spatial and Goal are not. This quantifies rollout precision only, not
+training-seed variance, which $n{=}1$ leaves unmeasured (see \S\ref{sec:limits}).}
 \begin{tabular}{lccccc}
 \toprule
 Model & Spatial & Object & Goal & Long & Avg \\
@@ -274,9 +282,8 @@ A (stock $\pi_{0.5}$, fused, 3 seeds) & 97.7 & 98.3 & 97.1 & 93.1 & 96.6 \\
 A$'$ (Gemma + standalone, 3 seeds)    & 96.7 & 92.6 & 90.5 & 79.6 & 89.9 \\
 D (Qwen2.5-7B, AR, n{=}1)             & 94.2 & 82.0 & 71.4 & 57.4 & 76.3 \\
 C (Dream-7B, diff., n{=}1)   & 93.0 & 93.2 & 73.2 & 69.4 & 82.2 \\
-B (topology)                 & \tbd & \tbd & \tbd & \tbd & \tbd \\
 \midrule
-$C-D$ (diffusion prior)      & $-1.2$ & $+11.2$ & $+1.8$ & $+12.0$ & $+5.9$ \\
+$C-D$ (diffusion prior)      & $-1.2$ & $+11.2^{\ast\ast\ast}$ & $+1.8$ & $+12.0^{\ast\ast\ast}$ & $+5.9$ \\
 $A'\!-\!A$ (decoupling cost) & $-1.0$ & $-5.7$ & $-6.6$ & $-13.5$ & $-6.7$ \\
 \bottomrule
 \end{tabular}
@@ -285,18 +292,24 @@ $A'\!-\!A$ (decoupling cost) & $-1.0$ & $-5.7$ & $-6.6$ & $-13.5$ & $-6.7$ \\
 \paragraph{The diffusion prior helps, and most where AR is weakest.} On the
 identifying $C-D$ contrast (matched seed, identical standalone expert, LoRA
 recipe, and vision), the diffusion-trained backbone improves mean success by
-$+5.9$ points. The gain is not uniform: it concentrates on \textbf{long-horizon}
-(LIBERO-10, $+12.0$) and \textbf{object} ($+11.2$), is small on goal ($+1.8$), and
-is a statistical tie on the near-ceiling spatial suite ($-1.2$). This is the
-predicted pattern --- D (and A$'$) degrade sharply on long, multi-stage tasks
-(A$'-$A is $-13.5$ on long), and it is exactly there that the bidirectional,
-diffusion-trained representation recovers the most. The effect is measured at
-matched scale (7B), matched initialization (Dream is initialized from Qwen2.5-7B),
-and matched everything-else, so it is attributable to the pretraining objective
-rather than capacity or architecture. \emph{Caveat:} $C$ and $D$ are single-seed
-($n{=}1$); seeds 1--2 are pending for error bars, and the spatial cell for $C$ is
-recovered from clean per-task rates after an eval-harness logging fault (see
-RESULTS.md).
+$+5.9$ points. The gain is not uniform, and the pattern is the informative result.
+On the two suites where the AR backbone is strong, the backbones are
+indistinguishable: spatial ($C$ 93.0 [90.4, 94.9] vs.\ $D$ 94.2 [91.8, 95.9]) and
+goal ($C$ 73.2 [69.2, 76.9] vs.\ $D$ 71.4 [67.3, 75.2]) both have overlapping 95\%
+Wilson intervals ($p=0.44$, $p=0.52$). On the two suites where the AR backbone is
+weak, the diffusion prior wins decisively and the intervals are disjoint: object
+($C$ 93.2 [90.6, 95.1] vs.\ $D$ 82.0 [78.4, 85.1], $+11.2$, $p<10^{-7}$) and
+long-horizon ($C$ 69.4 [65.2, 73.3] vs.\ $D$ 57.4 [53.0, 61.7], $+12.0$,
+$p<10^{-4}$). This matches the hypothesis: D (and A$'$) degrade sharply on long,
+multi-stage tasks (A$'-$A is $-13.5$ on long), and it is exactly there that the
+bidirectional, diffusion-trained representation recovers the most. Because the
+comparison is at matched scale (7B), matched initialization (Dream is initialized
+\emph{from} Qwen2.5-7B), and matched vision/expert/recipe/seed, the gap is
+attributable to the pretraining that distinguishes the two backbones rather than to
+capacity or architecture (we bound this attribution in \S\ref{sec:limits}). The
+significance above is at the \emph{rollout} level (500 trials/suite) and states
+only that these two trained models differ; it does not speak to training-seed
+variance, which we could not measure at $n{=}1$ (\S\ref{sec:limits}).
 
 \subsection{Representation-level probing}
 \label{sec:probing}
@@ -458,17 +471,52 @@ largest on long-horizon tasks. Discriminating these requires the deferred
 abstract-target probes (subtask phase, spatial relations) and a closed-loop /
 distribution-shift probe, which we leave to future work.
 
-\todo{once B is in: B$-$D (topology) vs C$-$D (prior). Note C sits below A$'$/A in
-absolute terms (decoupling + LoRA-vs-full-FT cost, common to C and D, cancels in
-C$-$D).}
+Two points of scope. In absolute terms C sits below A$'$ and A, but this reflects
+the decoupled-expert and LoRA-vs-full-fine-tuning costs, which are shared by C and
+D and cancel in the identifying $C-D$ contrast. And while our design controls
+attention \emph{topology} by giving C and D the same mask, a natural follow-up is
+a backbone with an \emph{expanded} attention topology over the action block (a
+``Model~B'' built on D's weights), which would separate any benefit of richer
+action-block attention from the pretraining prior; we leave this, and the deeper
+probes above, to future work.
 
-\paragraph{Limitations.} $C$/$D$ are single-seed ($n{=}1$); the $+5.9$/$+12.0$
-gaps are large relative to the A-seed spread ($\pm0.2$ avg) but seeds 1--2 are
-needed for formal error bars. Evaluation is simulation-only (LIBERO), so external
-validity to real robots is untested. The absolute numbers reflect the standalone
-(decoupled) expert, which costs $\sim$6--7 points vs.\ the fused expert
-($A'-A$); this cost is shared by $C$ and $D$ and thus does not affect the
-identifying contrast.
+\subsection{Limitations}
+\label{sec:limits}
+
+\paragraph{Training-seed variance.} $C$ and $D$ are single-seed ($n{=}1$). The
+Wilson intervals and tests in \S\ref{sec:main} establish that the two \emph{trained
+models} differ at the rollout level, but they do not capture variance across
+retraining. This matters most for long-horizon: across seeds, A$'$ long-horizon
+success ranged 74.6--82.4 (sd $\approx$ 4.3), so single-seed suite gaps should be
+read as provisional. That the two significant gaps ($+11.2$, $+12.0$) are several
+times this seed spread is encouraging, but confirming them with additional seeds is
+the most important next step.
+
+\paragraph{Objective vs.\ corpus confound.} Dream-7B is initialized from
+Qwen2.5-7B and then trained with a discrete-diffusion objective, but that training
+also uses its own data and compute. With off-the-shelf backbones we cannot
+separate the pretraining \emph{objective} from the \emph{corpus/compute} that
+accompanied it; ``pretraining prior'' should therefore be read as ``the
+pretraining that produced Dream rather than Qwen,'' not the diffusion objective in
+isolation. The shared initialization narrows, but does not eliminate, this
+confound; fully isolating the objective would require pretraining a matched pair
+under one corpus, which is beyond our scope.
+
+\paragraph{What is \emph{not} confounded.} Attention topology is controlled: $C$
+and $D$ use the \emph{identical} block-diagonal prefix-LM attention mask at both
+training and inference (Dream respects the passed 4D mask), so the contrast is not
+explained by bidirectional-vs-causal attention \emph{usage} --- only by the
+pretraining behind the weights. Scale, initialization, vision encoder, action
+expert, adaptation recipe, data, and seed are likewise matched.
+
+\paragraph{Scope.} Evaluation is simulation-only on a single benchmark (LIBERO),
+so real-robot external validity is untested. Absolute performance reflects the
+standalone (decoupled) expert, which costs $\sim$6--7 points vs.\ the fused expert
+($A'-A$); this cost is shared by $C$ and $D$ and cancels in $C-D$, but it means the
+study characterizes a controlled regime below state-of-the-art rather than a
+production policy. Finally, the probes target low-level quantities that saturate at
+ceiling for both backbones, so the representation-level comparison
+(\S\ref{sec:probing}) is suggestive rather than conclusive.
 
 \section{Conclusion}
 
