@@ -1,0 +1,182 @@
+"""Compute normalization statistics for a config.
+
+This script is used to compute the normalization statistics for a given config. It
+will compute the mean and standard deviation of the data in the dataset and save it
+to the config assets directory.
+"""
+
+import dataclasses
+
+import numpy as np
+import tqdm
+import tyro
+
+import openpi.models.model as _model
+import openpi.policies.humanoid_upper_body_policy as humanoid_upper_body_policy
+import openpi.policies.piper_ee_single_policy as piper_ee_single_policy
+import openpi.policies.piperx_ee_policy as piperx_ee_policy
+import openpi.policies.piperx_policy as piperx_policy
+import openpi.shared.normalize as normalize
+import openpi.training.config as _config
+import openpi.training.data_loader as _data_loader
+import openpi.transforms as transforms
+
+
+class RemoveStrings(transforms.DataTransformFn):
+    def __call__(self, x: dict) -> dict:
+        return {k: v for k, v in x.items() if not np.issubdtype(np.asarray(v).dtype, np.str_)}
+
+
+def _repack_without_images(repack_inputs: tuple[transforms.DataTransformFn, ...]) -> list[transforms.DataTransformFn]:
+    """Drop camera keys from repack transforms (norm stats only need state/actions)."""
+    out: list[transforms.DataTransformFn] = []
+    for transform in repack_inputs:
+        if isinstance(transform, transforms.RepackTransform):
+            structure = {
+                key: value for key, value in transform.structure.items() if key != "images"
+            }
+            out.append(transforms.RepackTransform(structure))
+        else:
+            out.append(transform)
+    return out
+
+
+def _inputs_without_images(
+    data_inputs: tuple[transforms.DataTransformFn, ...],
+) -> list[transforms.DataTransformFn]:
+    """Enable skip_images on robot input transforms that support it."""
+    out: list[transforms.DataTransformFn] = []
+    for transform in data_inputs:
+        if isinstance(transform, piperx_ee_policy.PiperXEeInputs):
+            out.append(dataclasses.replace(transform, skip_images=True))
+        elif isinstance(transform, piper_ee_single_policy.PiperEeSingleInputs):
+            out.append(dataclasses.replace(transform, skip_images=True))
+        elif isinstance(transform, piperx_policy.PiperXInputs):
+            out.append(dataclasses.replace(transform, skip_images=True))
+        elif isinstance(transform, humanoid_upper_body_policy.HumanoidUpperBodyInputs):
+            out.append(dataclasses.replace(transform, skip_images=True))
+        else:
+            out.append(transform)
+    return out
+
+
+def _norm_stats_transforms(
+    data_config: _config.DataConfig,
+    *,
+    skip_images: bool,
+) -> list[transforms.DataTransformFn]:
+    repack = data_config.repack_transforms.inputs
+    data_inputs = data_config.data_transforms.inputs
+    if skip_images:
+        repack = tuple(_repack_without_images(repack))
+        data_inputs = tuple(_inputs_without_images(data_inputs))
+    return [*repack, *data_inputs, RemoveStrings()]
+
+
+def create_torch_dataloader(
+    data_config: _config.DataConfig,
+    action_horizon: int,
+    batch_size: int,
+    model_config: _model.BaseModelConfig,
+    num_workers: int,
+    max_frames: int | None = None,
+    *,
+    skip_images: bool = False,
+) -> tuple[_data_loader.Dataset, int]:
+    if data_config.repo_id is None:
+        raise ValueError("Data config must have a repo_id")
+    dataset = _data_loader.create_torch_dataset(
+        data_config,
+        action_horizon,
+        model_config,
+        skip_videos=skip_images,
+    )
+    dataset = _data_loader.TransformedDataset(
+        dataset,
+        _norm_stats_transforms(data_config, skip_images=skip_images),
+    )
+    if max_frames is not None and max_frames < len(dataset):
+        num_batches = max_frames // batch_size
+        shuffle = True
+    else:
+        num_batches = len(dataset) // batch_size
+        shuffle = False
+    data_loader = _data_loader.TorchDataLoader(
+        dataset,
+        local_batch_size=batch_size,
+        num_workers=num_workers,
+        shuffle=shuffle,
+        num_batches=num_batches,
+    )
+    return data_loader, num_batches
+
+
+def create_rlds_dataloader(
+    data_config: _config.DataConfig,
+    action_horizon: int,
+    batch_size: int,
+    max_frames: int | None = None,
+    *,
+    skip_images: bool = False,
+) -> tuple[_data_loader.Dataset, int]:
+    dataset = _data_loader.create_rlds_dataset(data_config, action_horizon, batch_size, shuffle=False)
+    dataset = _data_loader.IterableTransformedDataset(
+        dataset,
+        _norm_stats_transforms(data_config, skip_images=skip_images),
+        is_batched=True,
+    )
+    if max_frames is not None and max_frames < len(dataset):
+        num_batches = max_frames // batch_size
+    else:
+        # NOTE: this length is currently hard-coded for DROID.
+        num_batches = len(dataset) // batch_size
+    data_loader = _data_loader.RLDSDataLoader(
+        dataset,
+        num_batches=num_batches,
+    )
+    return data_loader, num_batches
+
+
+def main(
+    config_name: str,
+    max_frames: int | None = None,
+    skip_images: bool = False,
+):
+    config = _config.get_config(config_name)
+    data_config = config.data.create(config.assets_dirs, config.model)
+
+    if data_config.rlds_data_dir is not None:
+        data_loader, num_batches = create_rlds_dataloader(
+            data_config, config.model.action_horizon, config.batch_size, max_frames, skip_images=skip_images
+        )
+    else:
+        data_loader, num_batches = create_torch_dataloader(
+            data_config,
+            config.model.action_horizon,
+            config.batch_size,
+            config.model,
+            config.num_workers,
+            max_frames,
+            skip_images=skip_images,
+        )
+
+    keys = ["state", "actions"]
+    stats = {key: normalize.RunningStats() for key in keys}
+
+    for batch in tqdm.tqdm(data_loader, total=num_batches, desc="Computing stats"):
+        for key in keys:
+            stats[key].update(np.asarray(batch[key]))
+
+    norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
+
+    # Match training config: AssetsConfig(asset_id=...) loads from assets_dirs / asset_id.
+    asset_id = data_config.asset_id or data_config.repo_id
+    if asset_id is None:
+        raise ValueError("Data config must have asset_id or repo_id to save norm stats.")
+    output_path = config.assets_dirs / asset_id
+    print(f"Writing stats to: {output_path}")
+    normalize.save(output_path, norm_stats)
+
+
+if __name__ == "__main__":
+    tyro.cli(main)
