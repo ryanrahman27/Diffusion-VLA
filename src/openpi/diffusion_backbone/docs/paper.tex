@@ -52,8 +52,8 @@ significant (disjoint 95\% Wilson intervals, $p<0.001$) on the long-horizon
 goal suites. Linear probing of the two backbones' action-token features, however,
 finds them equally decodable for low-level action, state, and gripper targets
 ($|C-D|\le0.01$): the behavioral advantage is not reducible to the linear
-decodability of immediate control signals, pointing instead to higher-level or
-closed-loop structure. We report the study as a controlled, single-seed result and
+decodability of immediate control signals, which rules out the simplest
+explanation and leaves the underlying mechanism to future probing. We report the study as a controlled, single-seed result and
 discuss its limitations, including seed variance and the objective-vs-corpus
 confound inherent to off-the-shelf backbones.
 \end{abstract}
@@ -98,8 +98,9 @@ matched scale, initialization, and everything downstream of the backbone, so the
 gap is attributable to the pretraining prior. Probing the two backbones'
 action-token features, however, finds them equally linearly decodable for
 low-level control targets: the behavioral advantage is real but does not reduce to
-the linear readability of immediate actions, a dissociation that locates the
-effect in higher-level or closed-loop structure.
+the linear readability of immediate actions --- ruling out the simplest
+explanation, even if our low-level probes cannot themselves localize where the
+advantage lies.
 
 Our contributions are: (i) a scale/architecture-matched isolation of the
 diffusion pretraining prior for VLA backbones; (ii) a precise characterization of
@@ -373,36 +374,33 @@ gripper (median-split), acc    & 0.969 & 0.969 & $+0.001$ \\
 \end{tabular}
 \end{table}
 
-\paragraph{A rollout--probe dissociation.} At the representation level, C and D
-are \emph{tied}: their action-token features are equally --- and very highly ---
-linearly decodable for every low-level target ($|C-D|\le0.01$ throughout). This
-does not track the rollout result, where $C-D$ is $+5.9$ on average and $+12.0$ on
-long-horizon (\S\ref{sec:main}). The behavioral advantage of the diffusion prior
-is therefore \emph{not} explained by better linear decodability of low-level
-action, state, or gripper information --- that information is equally present in
-both backbones.
+\paragraph{The gain is not a low-level decodability effect.} At the representation
+level, C and D are \emph{tied}: their action-token features are equally --- and
+very highly --- linearly decodable for every low-level target ($|C-D|\le0.01$
+throughout), whereas the rollout gap is $+5.9$ on average and $+12.0$ on
+long-horizon (\S\ref{sec:main}). This lets us cleanly \emph{rule out} the simplest
+explanation of the behavioral gain: it is not that the diffusion prior makes the
+immediate action, state, or gripper command more linearly readable --- that
+information is present to the same (high) degree in both backbones.
 
-Three factors frame this null. (i) \textbf{Ceiling:} both backbones probe at
-$0.87$--$0.96$, leaving little headroom for a linear probe to separate them, so the
-result is ``no difference detectable on these targets,'' not ``identical
-representations.'' (ii) \textbf{Target level:} these targets are low-level and
-read from single, in-distribution frames, whereas the rollout gap concentrates on
-long-horizon control --- a closed-loop, compounding-error regime that static
-single-frame probing cannot capture; the abstract targets most likely to separate
-the backbones (subtask phase, spatial relations) are the ones deferred for
-requiring simulator-state labels. (iii) \textbf{Nonlinear probe:} the MLP did not
-converge and is inconclusive. The takeaway is that the diffusion prior's benefit
-appears to act through higher-level/temporal structure or closed-loop robustness
-rather than through the linear decodability of immediate control signals --- ruling
-out the simplest mechanistic explanation and motivating the deferred
-abstract-target and closed-loop probes.
+We are careful not to overread the null into a positive claim about \emph{where}
+the advantage lives; the probe does not localize it, for three reasons. (i)
+\textbf{Ceiling:} both backbones sit at $0.87$--$0.96$, leaving little headroom for
+a linear probe to separate them, so this is ``no difference detectable on these
+targets,'' not ``identical representations.'' (ii) \textbf{Target level:} the
+targets are low-level and read from single, in-distribution frames, whereas the
+rollout gap is a long-horizon, closed-loop, compounding-error effect that static
+single-frame probing is not designed to capture. (iii) \textbf{Nonlinear probe:}
+the MLP did not converge and is inconclusive. Higher-level or temporal structure
+and closed-loop robustness remain plausible mechanisms, but adjudicating them is
+exactly the job of the deferred abstract-target and closed-loop probes; here we
+claim only the negative result the data supports.
 
 \section{Discussion}
 
-The matched $C-D$ contrast lands on the \emph{positive} outcome of the three we
-pre-registered: the diffusion-trained backbone yields better action-token
-representations, and the advantage survives end-to-end into closed-loop control
-($+5.9$ mean, $+12.0$ on long-horizon). Because $C$ and $D$ are identical up to
+The matched $C-D$ contrast is positive: the diffusion-trained backbone yields a
+better policy, and the advantage is largest on long-horizon control
+($+5.9$ mean, $+12.0$ on long-horizon, both significant at the rollout level). Because $C$ and $D$ are identical up to
 the pretraining objective (Dream is initialized from Qwen2.5-7B; same expert,
 vision, LoRA recipe, seed, and data), we read this as evidence that a
 bidirectional/denoising pretraining prior produces hidden states that a fixed
@@ -410,18 +408,17 @@ flow-matching expert can exploit better than those of a matched autoregressive
 backbone --- most in the long-horizon, multi-stage regime where the AR backbone
 degrades.
 
-The probing analysis (\S\ref{sec:probing}) sharpens \emph{how} this happens by
-ruling out the simplest account. If the diffusion prior simply made low-level
-control more linearly readable, C would out-probe D; instead the two are tied at
-ceiling on every low-level target (Table~\ref{tab:probing}) while C clearly
-out-\emph{rolls} D. This rollout--probe dissociation says the advantage does not
-live in the linear decodability of immediate action/state signals --- both
-backbones carry those equally --- but in something the static, single-frame,
-in-distribution probe does not see: plausibly higher-level or temporal structure,
-or closed-loop robustness to compounding error, consistent with the gap being
-largest on long-horizon tasks. Discriminating these requires the deferred
-abstract-target probes (subtask phase, spatial relations) and a closed-loop /
-distribution-shift probe, which we leave to future work.
+The probing analysis (\S\ref{sec:probing}) sharpens the claim by ruling out the
+simplest account. If the diffusion prior simply made low-level control more
+linearly readable, C would out-probe D; instead the two are tied at ceiling on
+every low-level target (Table~\ref{tab:probing}) while C clearly out-rolls D. We
+therefore claim only what the data supports: the advantage is \emph{not} a matter
+of the linear decodability of immediate action/state signals --- both backbones
+carry those equally --- and at this low-level, in-distribution resolution the probe
+cannot say more. Whether the effect is higher-level or temporal structure, or
+closed-loop robustness to compounding error (consistent with the gap being largest
+on long-horizon tasks), is left open for the deferred abstract-target and
+closed-loop / distribution-shift probes.
 
 Two points of scope. In absolute terms C sits below A$'$ and A, but this reflects
 the decoupled-expert and LoRA-vs-full-fine-tuning costs, which are shared by C and
@@ -486,7 +483,7 @@ the pretraining prior rather than to capacity or architecture. At the same time,
 linear probing shows the two backbones' action-token representations to be equally
 decodable for low-level action, state, and gripper targets: the behavioral
 advantage does not reduce to the linear readability of immediate control signals,
-a dissociation that points instead toward higher-level or closed-loop structure.
+which rules out the simplest explanation while leaving the mechanism open.
 The study is single-seed, simulation-only, and probes a deliberately low-level
 target set, so we read it as a controlled existence proof rather than a final
 measurement: a diffusion-trained backbone can yield a better flow-matching policy
