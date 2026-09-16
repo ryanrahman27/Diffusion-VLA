@@ -16,7 +16,7 @@
 \usepackage{xcolor}
 \usepackage{graphicx}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta,positioning,calc}
+\usetikzlibrary{positioning}
 \usepackage{hyperref}
 
 \hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue,
@@ -163,41 +163,40 @@ measure their quality directly via probing rather than only through rollouts.
 
 \begin{figure}[t]
 \centering
-\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
   font=\footnotesize,
-  >={Latex[length=2mm]},
   io/.style ={draw, rounded corners, fill=gray!8, align=center,
-              minimum width=30mm, minimum height=7mm, inner sep=2pt},
-  bb/.style ={draw=orange!75!black, line width=0.7pt, rounded corners,
-              fill=orange!14, align=center, minimum width=32mm, minimum height=30mm},
-  exp/.style={draw=blue!65!black, line width=0.7pt, rounded corners,
-              fill=blue!10, align=center, minimum width=30mm, minimum height=18mm},
+              text width=26mm, minimum height=6mm, inner sep=2pt},
+  bb/.style ={draw=orange!75!black, thick, rounded corners,
+              fill=orange!15, align=center, text width=26mm, minimum height=27mm},
+  exp/.style={draw=blue!65!black, thick, rounded corners,
+              fill=blue!12, align=center, text width=24mm, minimum height=17mm},
   out/.style={draw, rounded corners, fill=gray!8, align=center,
-              minimum width=16mm, minimum height=10mm},
+              text width=15mm, minimum height=10mm},
 ]
 % inputs (stacked)
 \node[io] (img)  {Image $\to$ SigLIP + connector};
 \node[io, below=2.5mm of img]   (lang)  {Language $\to$ embed};
 \node[io, below=2.5mm of lang]  (state) {Proprioceptive state};
 \node[io, below=2.5mm of state] (act)   {Flow-time $\tau$ + noisy actions};
-% backbone (the swap), vertically centred on the input stack
-\coordinate (mid) at ($(lang.east)!0.5!(state.east)$);
-\node[bb, right=13mm of mid] (bb)
-  {\textbf{Backbone}\\[1pt]{\scriptsize\emph{(the only part}}\\{\scriptsize\emph{that changes)}}\\[4pt]
-   \textbf{C:} Dream-7B\\{\scriptsize discrete diffusion}\\[3pt]
-   \textbf{D:} Qwen2.5-7B\\{\scriptsize autoregressive}};
+% backbone (the swap)
+\node[bb, right=11mm of lang.east, yshift=-7mm, anchor=west] (bb)
+  {\textbf{Backbone} \\ {\scriptsize\itshape only part that changes} \\[3pt]
+   \textbf{C:} Dream-7B \\ {\scriptsize discrete diffusion} \\[2pt]
+   \textbf{D:} Qwen2.5-7B \\ {\scriptsize autoregressive}};
 % shared standalone expert
-\node[exp, right=15mm of bb] (exp)
-  {\textbf{Standalone}\\\textbf{flow expert}\\[2pt]{\scriptsize DiT --- identical}\\{\scriptsize for C and D}};
+\node[exp, right=12mm of bb, anchor=west] (exp)
+  {\textbf{Standalone flow expert} \\[2pt] {\scriptsize DiT --- identical for C, D}};
 % output
-\node[out, right=10mm of exp] (out) {Action\\chunk $a_{1:H}$};
+\node[out, right=10mm of exp, anchor=west] (out) {Action chunk $a_{1:H}$};
 % arrows
-\foreach \n in {img,lang,state,act}{\draw[->] (\n.east) -- (bb.west);}
-\draw[->] (bb.east) -- node[above]{$H_{\mathrm{action}}$} (exp.west);
-\draw[->] (exp.east) -- node[above]{$v_\theta$} (out.west);
-\end{tikzpicture}%
-}
+\draw[->] (img.east)   -- (bb.west);
+\draw[->] (lang.east)  -- (bb.west);
+\draw[->] (state.east) -- (bb.west);
+\draw[->] (act.east)   -- (bb.west);
+\draw[->] (bb.east)  -- node[above, font=\scriptsize] {$H_{\text{action}}$} (exp.west);
+\draw[->] (exp.east) -- node[above, font=\scriptsize] {$v_\theta$} (out.west);
+\end{tikzpicture}
 \caption{\textbf{Controlled backbone swap.} Vision (SigLIP + connector), the
 standalone flow-matching action expert, the action space, dataset, adaptation
 recipe, and the block-diagonal attention mask are held \emph{identical}; only the
