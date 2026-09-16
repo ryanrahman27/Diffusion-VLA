@@ -171,7 +171,7 @@ measure their quality directly via probing rather than only through rollouts.
               fill=orange!15, align=center, text width=26mm, minimum height=27mm},
   exp/.style={draw=blue!65!black, thick, rounded corners,
               fill=blue!12, align=center, text width=24mm, minimum height=17mm},
-  out/.style={draw, rounded corners, fill=gray!8, align=center,
+  outbox/.style={draw, rounded corners, fill=gray!8, align=center,
               text width=15mm, minimum height=10mm},
 ]
 % inputs (stacked)
@@ -188,7 +188,7 @@ measure their quality directly via probing rather than only through rollouts.
 \node[exp, right=12mm of bb, anchor=west] (exp)
   {\textbf{Standalone flow expert} \\[2pt] {\scriptsize DiT --- identical for C, D}};
 % output
-\node[out, right=10mm of exp, anchor=west] (out) {Action chunk $a_{1:H}$};
+\node[outbox, right=10mm of exp, anchor=west] (out) {Action chunk $a_{1:H}$};
 % arrows
 \draw[->] (img.east)   -- (bb.west);
 \draw[->] (lang.east)  -- (bb.west);
