@@ -15,6 +15,8 @@
 \usepackage{array}
 \usepackage{xcolor}
 \usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
 \usepackage{hyperref}
 
 \hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue,
@@ -158,8 +160,57 @@ measure their quality directly via probing rather than only through rollouts.
 
 \section{Method}
 \subsection{Backbone-swap with a shared flow-matching expert}
+
+\begin{figure}[t]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize,
+  >={Latex[length=2mm]},
+  io/.style ={draw, rounded corners, fill=gray!8, align=center,
+              minimum width=30mm, minimum height=7mm, inner sep=2pt},
+  bb/.style ={draw=orange!75!black, line width=0.7pt, rounded corners,
+              fill=orange!14, align=center, minimum width=32mm, minimum height=30mm},
+  exp/.style={draw=blue!65!black, line width=0.7pt, rounded corners,
+              fill=blue!10, align=center, minimum width=30mm, minimum height=18mm},
+  out/.style={draw, rounded corners, fill=gray!8, align=center,
+              minimum width=16mm, minimum height=10mm},
+]
+% inputs (stacked)
+\node[io] (img)  {Image $\to$ SigLIP + connector};
+\node[io, below=2.5mm of img]   (lang)  {Language $\to$ embed};
+\node[io, below=2.5mm of lang]  (state) {Proprioceptive state};
+\node[io, below=2.5mm of state] (act)   {Flow-time $\tau$ + noisy actions};
+% backbone (the swap), vertically centred on the input stack
+\coordinate (mid) at ($(lang.east)!0.5!(state.east)$);
+\node[bb, right=13mm of mid] (bb)
+  {\textbf{Backbone}\\[1pt]{\scriptsize\emph{(the only part}}\\{\scriptsize\emph{that changes)}}\\[4pt]
+   \textbf{C:} Dream-7B\\{\scriptsize discrete diffusion}\\[3pt]
+   \textbf{D:} Qwen2.5-7B\\{\scriptsize autoregressive}};
+% shared standalone expert
+\node[exp, right=15mm of bb] (exp)
+  {\textbf{Standalone}\\\textbf{flow expert}\\[2pt]{\scriptsize DiT --- identical}\\{\scriptsize for C and D}};
+% output
+\node[out, right=10mm of exp] (out) {Action\\chunk $a_{1:H}$};
+% arrows
+\foreach \n in {img,lang,state,act}{\draw[->] (\n.east) -- (bb.west);}
+\draw[->] (bb.east) -- node[above]{$H_{\mathrm{action}}$} (exp.west);
+\draw[->] (exp.east) -- node[above]{$v_\theta$} (out.west);
+\end{tikzpicture}%
+}
+\caption{\textbf{Controlled backbone swap.} Vision (SigLIP + connector), the
+standalone flow-matching action expert, the action space, dataset, adaptation
+recipe, and the block-diagonal attention mask are held \emph{identical}; only the
+language backbone is swapped between the diffusion-trained Dream-7B (C) and its
+autoregressive initializer Qwen2.5-7B (D). The expert reads the action-token
+hidden states $H_{\mathrm{action}}$ and outputs the flow vector field $v_\theta$
+over the action chunk. Because everything but the backbone is matched, the $C-D$
+difference isolates the pretraining prior.}
+\label{fig:method}
+\end{figure}
+
 Image/language/proprio/flow-time/noisy-action tokens are processed by the
-backbone, which contextualizes the action tokens; the hidden states at the
+backbone, which contextualizes the action tokens (Figure~\ref{fig:method}); the hidden states at the
 action-token positions, $H_{\text{action}}$, are read by a flow-matching action
 expert that outputs the vector field over the action chunk. The flow objective
 is $\mathcal{L}=\lVert v_\theta - (A_{\text{noise}}-A_{\text{clean}})\rVert^2$
